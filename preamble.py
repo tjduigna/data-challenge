@@ -1,16 +1,86 @@
+#!/usr/bin/env python3
+# The basics
+import os
 import numexpr        # Only required for fast df slice
+import requests
+import numpy as np
 import pandas as pd
 import seaborn as sns
 imshow = sns.mpl.pyplot.imshow
 from collections import defaultdict
+import lxml           # Not used but required by pandas
+# Testing naive database performances
+import psycopg2
+import pymongo
+from sqlalchemy import (
+        create_engine, Float, Column,
+        MetaData, Table, Integer, String,)
+from sqlalchemy.orm import sessionmaker
+
+
+
+# URLs for quick access to governmental data
+bls_url = 'https://www.bls.gov/cew/cewedr10.htm'
+census_url = 'https://api.census.gov/data'
+cen_query = 'pep/subcty?get=NAME,STNAME,CTYNAME,POP&{}'.format
+national_url = '{}/{{year}}/'
+
+
 
 # Your paths may vary
-base = ('../notebooks/data-challenge/nsduh/NSDUH-{0}-DS0001-data/'
+prim = '../notebooks/data-challenge/'
+base = (prim + 'nsduh/NSDUH-{0}-DS0001-data/'
         'NSDUH-{0}-DS0001-data-excel.tsv')
+dbase = (prim + 'partd/PartD_Prescriber_'
+         'PUF_NPI_Drug_{}.txt')
+sbase = (prim + 'partd/PartD_Prescriber_'
+         'PUF_NPI_{}.txt')
+paths = {key: base.format(key) for key in range(2011, 2017)}
+dpaths = {2000 + key: dbase.format(key) for key in range(13, 17)}
+spaths = {2000 + key: sbase.format(key) for key in range(13, 17)}
 
+# Medicare Part D META DATA
+
+partdtypes = {
+    'npi':                             np.int64,
+    'nppes_provider_last_org_name':      object,
+    'nppes_provider_first_name':         object,
+    'nppes_provider_city':           'category',
+    'nppes_provider_state':              object,
+    'specialty_description':             object,
+    'description_flag':              'category',
+    'drug_name':                         object,
+    'generic_name':                      object,
+    'bene_count':                    np.float64,
+    'total_claim_count':               np.int64,
+    'total_30_day_fill_count':       np.float64,
+    'total_day_supply':                np.int64,
+    'total_drug_cost':               np.float64,
+    'bene_count_ge65':               np.float64,
+    'bene_count_ge65_suppress_flag': 'category',
+    'total_claim_count_ge65':        np.float64,
+    'ge65_suppress_flag':            'category',
+    'total_30_day_fill_count_ge65':  np.float64,
+    'total_day_supply_ge65':         np.float64,
+    'total_drug_cost_ge65':          np.float64,
+}
+
+# Generic names of marijuana derived prescriptions
+mjps = [
+    # Directly found in marijuana
+    'DRONABINOL',
+    'MARINOL',
+    'THC',
+    'SATIVEX',
+    # Cannabinoids not found in marijuana
+    'NABILONE',
+    'CESAMET',
+]
+
+
+
+# NSDUH META DATA
 # 2016 didn't come with as much auxiliary info
-paths = {2000 + key: base.format('20' + str(key))
-                 for key in range(11, 17)}
 demographic = [ # Notes that map entries to actual values
     'INCOME',   # 1: <20k, 2: 20k-50, 3: 50k-75k, 4: >75k
     'ANYHLTI2', # Covered by health insurance
